@@ -1,0 +1,80 @@
+name: VPS-Shim Self Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  write-marker:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
+
+      - name: Pull
+        env:
+          GH_OWNER: ${{ github.repository_owner }}
+          PRIVATE_REPO_NAME: ${{ vars.PRIVATE_REPO_NAME }}
+          SHIM_PAT: ${{ secrets.SHIM_PAT }}
+        run: |
+          curl -s -H "Authorization: token ${SHIM_PAT}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${GH_OWNER}/${PRIVATE_REPO_NAME}/contents/vps-shim/scripts/git_pull.sh" \
+            | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())" \
+            > /tmp/git_pull.sh
+          chmod +x /tmp/git_pull.sh
+          bash /tmp/git_pull.sh
+
+      - name: Write marker file
+        run: |
+          echo "self-test marker written at $(date -u +%Y-%m-%dT%H:%M:%SZ) by run ${{ github.run_id }}" \
+            > /home/runner/shim/repo/vps-shim/state/selftest_marker.txt
+
+      - name: Push
+        env:
+          GH_OWNER: ${{ github.repository_owner }}
+          PRIVATE_REPO_NAME: ${{ vars.PRIVATE_REPO_NAME }}
+          SHIM_PAT: ${{ secrets.SHIM_PAT }}
+        run: |
+          bash /home/runner/shim/repo/vps-shim/scripts/git_push.sh "selftest: write marker"
+
+  read-marker:
+    needs: write-marker
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
+
+      - name: Pull
+        env:
+          GH_OWNER: ${{ github.repository_owner }}
+          PRIVATE_REPO_NAME: ${{ vars.PRIVATE_REPO_NAME }}
+          SHIM_PAT: ${{ secrets.SHIM_PAT }}
+        run: |
+          curl -s -H "Authorization: token ${SHIM_PAT}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${GH_OWNER}/${PRIVATE_REPO_NAME}/contents/vps-shim/scripts/git_pull.sh" \
+            | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())" \
+            > /tmp/git_pull.sh
+          chmod +x /tmp/git_pull.sh
+          bash /tmp/git_pull.sh
+
+      - name: Verify marker survived onto a fresh runner
+        run: |
+          cat /home/runner/shim/repo/vps-shim/state/selftest_marker.txt
+          test -f /home/runner/shim/repo/vps-shim/state/selftest_marker.txt
